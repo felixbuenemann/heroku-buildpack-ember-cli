@@ -8,9 +8,6 @@ build_dir=$1
 cache_dir=$2
 env_dir=$3
 bp_dir=$(cd $(dirname $0); cd ..; pwd)
-
-# Fix leak
-unset GIT_DIR
 # Load some convenience functions like status(), echo(), and indent()
 source $bp_dir/bin/common.sh
 
@@ -24,6 +21,29 @@ fi
 
 build_env=${EMBER_ENV:-production}
 status "Building environment: $build_env"
+
+if [ "$GIT_SSH_KEY" != "" ]; then
+  status "Detected SSH key for git.  launching ssh-agent and loading key"
+  # launch ssh-agent, we'll use it to serve our ssh key
+  # and kill it towards the end of the buildpack's run
+  eval `ssh-agent -s`
+  # We're not supporting passphrases at this time.  We could pull that in
+  # from config as well, but then we'd have to setup expect or some other
+  # terminal automation tool to feed it into ssh-add.
+  echo $GIT_SSH_KEY | base64 --decode | ssh-add -
+  # Add github to the list of known hosts - ignore the warning or else set -e will abort the deployment
+  ssh -oStrictHostKeyChecking=no -T git@github.com || true
+fi
+
+if test -f $build_dir/hooks/git_hook.sh; then
+  export GIT_DIR GIT_WORK_TREE=$build_dir
+  status "Git hook detected. Running..."
+  source $build_dir/hooks/git_hook.sh
+  unset GIT_WORK_TREE
+fi
+
+# Fix leak
+unset GIT_DIR
 
 mkdir -p $build_dir/vendor
 
@@ -151,24 +171,6 @@ else
   fi
 
   ln -s $cache_dir/bower_components $build_dir/bower_components
-fi
-
-
-if [ "$GIT_SSH_KEY" != "" ]; then
-  status "Detected SSH key for git.  launching ssh-agent and loading key"
-  echo $GIT_SSH_KEY | base64 --decode > id_rsa
-  # launch ssh-agent, we'll use it to serve our ssh key
-  # and kill it towards the end of the buildpack's run
-  eval `ssh-agent -s`
-  # ssh-add doesn't like the default 644
-  chmod 600 id_rsa
-  # We're not supporting passphrases at this time.  We could pull that in
-  # from config as well, but then we'd have to setup expect or some other
-  # terminal automation tool to feed it into ssh-add.
-  ssh-add id_rsa
-  rm id_rsa
-  # Add github to the list of known hosts - ignore the warning or else set -e will abort the deployment
-  ssh -oStrictHostKeyChecking=no -T git@github.com || true
 fi
 
 status "Pruning cached dependencies not specified in package.json"
