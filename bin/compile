@@ -22,6 +22,8 @@ fi
 build_env=${EMBER_ENV:-production}
 status "Building environment: $build_env"
 
+# Fallback to SSH_KEY if GIT_SSH_KEY is not set
+GIT_SSH_KEY=${GIT_SSH_KEY:-$SSH_KEY}
 if [ "$GIT_SSH_KEY" != "" ]; then
   status "Detected SSH key for git.  launching ssh-agent and loading key"
   # launch ssh-agent, we'll use it to serve our ssh key
